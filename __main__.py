@@ -52,6 +52,29 @@ class ToolBar(QtWidgets.QToolBar):
         self.addAction(self.saveButton)
 
 
+class PandasAsTable(QtCore.QAbstractTableModel):
+    def __init__(self, df, parent=None):
+        QtCore.QAbstractTableModel.__init__(self, parent)
+        self.df = df
+
+    def rowCount(self, parent=None):
+        return self.df.shape[0]
+
+    def columnCount(self, parent=None):
+        return self.df.shape[1]
+
+    def data(self, index, role=QtCore.Qt.DisplayRole):
+        if index.isValid():
+            if role == QtCore.Qt.DisplayRole:
+                return str(self.df.values[index.row()][index.column()])
+        return None
+
+    def headerData(self, col, orientation, role):
+        if orientation == QtCore.Qt.Horizontal and role == QtCore.Qt.DisplayRole:
+            return self.df.columns[col]
+        return None
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
@@ -64,7 +87,7 @@ class MainWindow(QMainWindow):
         self.toolbar = ToolBar()
         self.addToolBar(self.toolbar)
 
-        self.dirModel = QStandardItemModel()
+        self.dirModel = PandasAsTable(pd.DataFrame())
         self.imageModel = QStandardItemModel()
 
         self.ui.dockWidget.setTitleBarWidget(QtWidgets.QWidget())
@@ -82,7 +105,6 @@ class MainWindow(QMainWindow):
         self.toolbar.refreshButton.triggered.connect(self.create_dir_model)
 
         # Directory list view
-        self.ui.dirView.setModel(self.dirModel)
         self.ui.dirView.clicked.connect(self.change_image_grid)
 
         # Image view
@@ -93,16 +115,12 @@ class MainWindow(QMainWindow):
         self.ui.imageView.setViewMode(QtWidgets.QListView.IconMode)
         self.ui.imageView.setIconSize(image_size)
         self.ui.imageView.setGridSize(grid_size)
-        # self.ui.imageView.clicked.connect(self.image_selected)
-
-        # Dataframe to save to
-        self.df_images = pd.DataFrame()
+        self.ui.imageView.clicked.connect(self.image_selected)
 
         # Final touches
         self.update_statusbar()
 
     ################################################################
-
     def create_cmap_menu(self):
         self.cmapMenu.clear()
         for cmap_type, cmaps in Config.cmaps.items():
@@ -130,22 +148,36 @@ class MainWindow(QMainWindow):
     ################################################################
 
     def create_dir_model(self):
-        self.dirModel.clear()
-        for i in os.listdir(self.in_directory):
-            if not os.path.isdir(os.path.join(self.in_directory, i)):
+        table_rows = []
+        for root, _, files in os.walk(self.in_directory):
+            if not files:
                 continue
 
-            dirItem = QStandardItem()
-            dirItem2 = QStandardItem()
-            dirItem.appendColumn([dirItem2])
-            dirItem.setText(i)
-            self.dirModel.appendRow(dirItem)
+            dir_name = root.split(os.sep)[-1]
+            total_files = len(files)
+            selected = pd.NA
+
+            table_rows.append((dir_name, total_files, selected))
+
+        df_dirs = pd.DataFrame(
+            table_rows,
+            columns=['DIRECTORY', 'TOTAL FILES', 'SELECTED'])
+
+        self.dirModel = PandasAsTable(df_dirs)
+        self.ui.dirView.setModel(self.dirModel)
+        self.ui.dirView.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+
+    ################################################################
 
     def change_image_grid(self, index):
         self.imageModel.clear()
 
-        # Get dir path from the index data itself - Avoids having to play with roles
-        dir_path = os.path.join(self.in_directory, index.data())
+        # Get dir path from the index data itself
+        dir_path = os.path.join(
+            self.in_directory,
+            self.dirModel.df.iloc[index.row()]['DIRECTORY'])
+
+        previously_checked = self.dirModel.df.iloc[index.row()]['SELECTED']
 
         # Parse arrays within the directory
         image_list = [
@@ -160,10 +192,29 @@ class MainWindow(QMainWindow):
             imageItem = QStandardItem()
             imageItem.setIcon(img_pixmap)
             imageItem.setText(filename)
+            imageItem.setEditable(False)
+
             imageItem.setCheckable(True)
+            if not pd.isnull(previously_checked):
+                if filename in previously_checked:
+                    imageItem.setCheckState(QtCore.Qt.CheckState.Checked)
 
             self.imageModel.appendRow(imageItem)
 
+    def image_selected(self, index):
+        current_row = self.ui.dirView.currentIndex().row()
+
+        item = self.imageModel.itemFromIndex(index)
+        if item.checkState() == QtCore.Qt.CheckState.Checked:
+            item_text = item.text()
+            current = self.dirModel.df.iloc[current_row]['SELECTED']
+
+            if pd.isnull(current):
+                self.dirModel.df.loc[current_row, 'SELECTED'] = [item_text]
+            elif item_text not in current:
+                self.dirModel.df.loc[current_row, 'SELECTED'] = current.append(item_text)
+
+        print(self.dirModel.df)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -39,6 +39,10 @@ def read_bmeii_im(bmeii_file):
 
 
 def loader(image_list):
+    # Remove old images first
+    for i in os.listdir(Config.save_root):
+        os.remove(os.path.join(Config.save_root, i))
+
     loader_pool = multiprocessing.Pool(4)
     saved_images = loader_pool.map(read_bmeii_im, image_list)
     loader_pool.close()
