@@ -11,10 +11,10 @@ from config import Config
 
 
 def read_bmeii_im(bmeii_file):
-    with open(bmeii_file, 'rb') as f:
-        file_name = os.path.basename(bmeii_file).replace('.bmeii', '')
-        save_path = os.path.join(Config.save_root, file_name + '.png')
+    file_name = os.path.basename(bmeii_file).replace('.bmeii', '')
+    save_path = os.path.join(Config.save_root, file_name + '.png')
 
+    with open(bmeii_file, 'rb') as f:
         try:
             rows = struct.unpack('I', f.read(4))[0]
             cols = struct.unpack('I', f.read(4))[0]
@@ -39,7 +39,7 @@ def read_bmeii_im(bmeii_file):
 
 
 def loader(image_list):
-    # Remove old images first
+    # Clear the image cache
     for i in os.listdir(Config.save_root):
         os.remove(os.path.join(Config.save_root, i))
 

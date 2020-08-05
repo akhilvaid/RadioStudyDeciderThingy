@@ -29,14 +29,6 @@ class ToolBar(QtWidgets.QToolBar):
         self.cmapButton.setIcon(QIcon.fromTheme('colormanagement'))
         self.cmapButton.setPopupMode(QtWidgets.QToolButton.InstantPopup)
 
-        self.prevButton = QtWidgets.QAction(
-            QIcon.fromTheme('previous'),
-            'Previous', self)
-
-        self.nextButton = QtWidgets.QAction(
-            QIcon.fromTheme('next'),
-            'Next', self)
-
         self.saveButton = QtWidgets.QAction(
             QIcon.fromTheme('filesave'),
             'Save', self)
@@ -46,32 +38,45 @@ class ToolBar(QtWidgets.QToolBar):
         self.separator1 = self.addSeparator()
         self.addWidget(self.cmapButton)
         self.separator2 = self.addSeparator()
-        self.addAction(self.prevButton)
-        self.addAction(self.nextButton)
-        self.separator3 = self.addSeparator()
         self.addAction(self.saveButton)
 
 
-class PandasAsTable(QtCore.QAbstractTableModel):
-    def __init__(self, df, parent=None):
+class TableModel(QtCore.QAbstractTableModel):
+    def __init__(self, studies, parent=None):
         QtCore.QAbstractTableModel.__init__(self, parent)
-        self.df = df
+        self.dict_studies = studies
+        self.list_keys = list(studies.keys())
+
+        self.dict_col = {
+            0: 'DIRECTORY',
+            1: 'TOTAL FILES',
+            2: 'SELECTED'
+        }
 
     def rowCount(self, parent=None):
-        return self.df.shape[0]
+        return len(self.dict_studies.keys())
 
     def columnCount(self, parent=None):
-        return self.df.shape[1]
+        return 3  # NOTE Requires changing for each new column
 
     def data(self, index, role=QtCore.Qt.DisplayRole):
         if index.isValid():
             if role == QtCore.Qt.DisplayRole:
-                return str(self.df.values[index.row()][index.column()])
+
+                val_ref = self.list_keys[index.row()]
+                if index.column() != 0:
+                    key_ref = self.dict_studies[self.list_keys[index.row()]]
+                    val_ref = key_ref[self.dict_col[index.column()]]
+
+                if isinstance(val_ref, list):
+                    return ', '.join(val_ref)
+                else:
+                    return str(val_ref)
         return None
 
     def headerData(self, col, orientation, role):
         if orientation == QtCore.Qt.Horizontal and role == QtCore.Qt.DisplayRole:
-            return self.df.columns[col]
+            return self.dict_col[col]
         return None
 
 
@@ -87,7 +92,7 @@ class MainWindow(QMainWindow):
         self.toolbar = ToolBar()
         self.addToolBar(self.toolbar)
 
-        self.dirModel = PandasAsTable(pd.DataFrame())
+        self.dirModel = TableModel(dict())
         self.imageModel = QStandardItemModel()
 
         self.ui.dockWidget.setTitleBarWidget(QtWidgets.QWidget())
@@ -103,6 +108,7 @@ class MainWindow(QMainWindow):
 
         # Toolbar
         self.toolbar.refreshButton.triggered.connect(self.create_dir_model)
+        self.toolbar.saveButton.triggered.connect(self.export_df)
 
         # Directory list view
         self.ui.dirView.clicked.connect(self.change_image_grid)
@@ -148,7 +154,7 @@ class MainWindow(QMainWindow):
     ################################################################
 
     def create_dir_model(self):
-        table_rows = []
+        dict_table = {}
         for root, _, files in os.walk(self.in_directory):
             if not files:
                 continue
@@ -157,13 +163,12 @@ class MainWindow(QMainWindow):
             total_files = len(files)
             selected = pd.NA
 
-            table_rows.append((dir_name, total_files, selected))
+            dict_table[dir_name] = {
+                'TOTAL FILES': total_files,
+                'SELECTED': selected
+            }
 
-        df_dirs = pd.DataFrame(
-            table_rows,
-            columns=['DIRECTORY', 'TOTAL FILES', 'SELECTED'])
-
-        self.dirModel = PandasAsTable(df_dirs)
+        self.dirModel = TableModel(dict_table)
         self.ui.dirView.setModel(self.dirModel)
         self.ui.dirView.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
 
@@ -173,11 +178,12 @@ class MainWindow(QMainWindow):
         self.imageModel.clear()
 
         # Get dir path from the index data itself
+        directory = self.dirModel.list_keys[index.row()]
         dir_path = os.path.join(
             self.in_directory,
-            self.dirModel.df.iloc[index.row()]['DIRECTORY'])
+            directory)
 
-        previously_checked = self.dirModel.df.iloc[index.row()]['SELECTED']
+        previously_checked = self.dirModel.dict_studies[directory]['SELECTED']
 
         # Parse arrays within the directory
         image_list = [
@@ -203,18 +209,32 @@ class MainWindow(QMainWindow):
 
     def image_selected(self, index):
         current_row = self.ui.dirView.currentIndex().row()
+        current_dir = self.dirModel.list_keys[current_row]
 
-        item = self.imageModel.itemFromIndex(index)
-        if item.checkState() == QtCore.Qt.CheckState.Checked:
-            item_text = item.text()
-            current = self.dirModel.df.iloc[current_row]['SELECTED']
+        images_selected = []
 
-            if pd.isnull(current):
-                self.dirModel.df.loc[current_row, 'SELECTED'] = [item_text]
-            elif item_text not in current:
-                self.dirModel.df.loc[current_row, 'SELECTED'] = current.append(item_text)
+        for row in range(self.imageModel.rowCount()):
+            item = self.imageModel.item(row)
+            if item.checkState() == QtCore.Qt.CheckState.Checked:
+                item_text = item.text()
+                images_selected.append(item_text)
 
-        print(self.dirModel.df)
+        if images_selected == []:
+            self.dirModel.dict_studies[current_dir]['SELECTED'] = pd.NA
+        else:
+            self.dirModel.dict_studies[current_dir]['SELECTED'] = images_selected
+
+        self.dirModel.dataChanged.emit()
+
+    def export_df(self):
+        rows = []
+        for directory, values in self.dirModel.dict_studies.items():
+            files = values['SELECTED']
+            rows.append((directory, files))
+
+        df_studies = pd.DataFrame(rows, columns=['DIRECTORY', 'FILES'])
+        
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
