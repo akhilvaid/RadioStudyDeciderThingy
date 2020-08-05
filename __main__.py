@@ -86,8 +86,6 @@ class MainWindow(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
 
-        self.in_directory = '/home/akhil/Temp/'
-
         # Instantiate widgets and models
         self.toolbar = ToolBar()
         self.addToolBar(self.toolbar)
@@ -101,6 +99,8 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.statusBarLabel)
 
         self.cmapMenu = QtWidgets.QMenu()
+
+        self.in_directory = None
 
         # Cmap menu
         Config.cmap = 'bone'
@@ -127,6 +127,7 @@ class MainWindow(QMainWindow):
         self.update_statusbar()
 
     ################################################################
+
     def create_cmap_menu(self):
         self.cmapMenu.clear()
         for cmap_type, cmaps in Config.cmaps.items():
@@ -154,6 +155,9 @@ class MainWindow(QMainWindow):
     ################################################################
 
     def create_dir_model(self):
+        self.in_directory = QtWidgets.QFileDialog.getExistingDirectory(
+            self, 'Study Directory', os.path.expanduser('~'))
+
         dict_table = {}
         for root, _, files in os.walk(self.in_directory):
             if not files:
@@ -224,7 +228,10 @@ class MainWindow(QMainWindow):
         else:
             self.dirModel.dict_studies[current_dir]['SELECTED'] = images_selected
 
-        self.dirModel.dataChanged.emit()
+        # TODO
+        # self.dirModel.dataChanged.emit()
+
+    ################################################################
 
     def export_df(self):
         rows = []
@@ -233,7 +240,7 @@ class MainWindow(QMainWindow):
             rows.append((directory, files))
 
         df_studies = pd.DataFrame(rows, columns=['DIRECTORY', 'FILES'])
-        
+        df_studies.to_csv('SelectedFiles.csv')
 
 
 if __name__ == "__main__":
