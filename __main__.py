@@ -4,10 +4,52 @@ import pandas as pd
 
 from PySide2 import QtCore, QtWidgets
 from PySide2.QtWidgets import QApplication, QMainWindow
-from PySide2.QtGui import QStandardItemModel, QStandardItem, QPixmap, QImage
+from PySide2.QtGui import QStandardItemModel, QStandardItem, QPixmap, QImage, QIcon
 
 from mainWindow import Ui_MainWindow
 from image_loading import loader
+from config import Config
+
+
+class ToolBar(QtWidgets.QToolBar):
+    def __init__(self, parent=None):
+        super(ToolBar, self).__init__(parent)
+
+        self.setMovable(False)
+        self.setIconSize(QtCore.QSize(22, 22))
+        self.setFloatable(False)
+        self.setContextMenuPolicy(QtCore.Qt.PreventContextMenu)
+        self.setObjectName('ToolBar')
+
+        self.refreshButton = QtWidgets.QAction(
+            QIcon.fromTheme('fileopen'),
+            'Load directory', self)
+
+        self.cmapButton = QtWidgets.QToolButton(self)
+        self.cmapButton.setIcon(QIcon.fromTheme('colormanagement'))
+        self.cmapButton.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+
+        self.prevButton = QtWidgets.QAction(
+            QIcon.fromTheme('previous'),
+            'Previous', self)
+
+        self.nextButton = QtWidgets.QAction(
+            QIcon.fromTheme('next'),
+            'Next', self)
+
+        self.saveButton = QtWidgets.QAction(
+            QIcon.fromTheme('filesave'),
+            'Save', self)
+
+        # Add to toolbar
+        self.addAction(self.refreshButton)
+        self.separator1 = self.addSeparator()
+        self.addWidget(self.cmapButton)
+        self.separator2 = self.addSeparator()
+        self.addAction(self.prevButton)
+        self.addAction(self.nextButton)
+        self.separator3 = self.addSeparator()
+        self.addAction(self.saveButton)
 
 
 class MainWindow(QMainWindow):
@@ -17,35 +59,85 @@ class MainWindow(QMainWindow):
         self.ui.setupUi(self)
 
         self.in_directory = '/home/akhil/Temp/'
-        self.save_path = '/tmp/BMEImg.png'  # Is temporary
 
-        self.ui.refreshButton.clicked.connect(self.refresh_dirs)
+        # Instantiate widgets and models
+        self.toolbar = ToolBar()
+        self.addToolBar(self.toolbar)
+
+        self.dirModel = QStandardItemModel()
+        self.imageModel = QStandardItemModel()
+
+        self.ui.dockWidget.setTitleBarWidget(QtWidgets.QWidget())
+
+        self.statusBarLabel = QtWidgets.QLabel()
+        self.statusBar().addWidget(self.statusBarLabel)
+
+        self.cmapMenu = QtWidgets.QMenu()
+
+        # Cmap menu
+        Config.cmap = 'bone'
+        self.create_cmap_menu()
+
+        # Toolbar
+        self.toolbar.refreshButton.triggered.connect(self.create_dir_model)
 
         # Directory list view
-        self.dirModel = QStandardItemModel()
         self.ui.dirView.setModel(self.dirModel)
         self.ui.dirView.clicked.connect(self.change_image_grid)
 
         # Image view
-        self.imageModel = QStandardItemModel()
+        image_size = QtCore.QSize(400, 400)  # Set icon sizing here
+        grid_size = QtCore.QSize(450, 450)
+
         self.ui.imageView.setModel(self.imageModel)
         self.ui.imageView.setViewMode(QtWidgets.QListView.IconMode)
-        image_size = QtCore.QSize(400, 400)  # Set icon sizing here
         self.ui.imageView.setIconSize(image_size)
-        self.ui.imageView.setGridSize(QtCore.QSize(450, 450))
+        self.ui.imageView.setGridSize(grid_size)
         # self.ui.imageView.clicked.connect(self.image_selected)
 
-        # Dataframe that contains state
+        # Dataframe to save to
         self.df_images = pd.DataFrame()
 
+        # Final touches
+        self.update_statusbar()
 
-    def refresh_dirs(self):
+    ################################################################
+
+    def create_cmap_menu(self):
+        self.cmapMenu.clear()
+        for cmap_type, cmaps in Config.cmaps.items():
+            thisMenu = QtWidgets.QMenu(cmap_type)
+            self.cmapMenu.addMenu(thisMenu)
+
+            for cmap in cmaps:
+                thisAction = QtWidgets.QAction(cmap, self.cmapMenu)
+                thisAction.triggered.connect(self.update_cmap)
+                thisMenu.addAction(thisAction)
+
+        self.toolbar.cmapButton.setMenu(self.cmapMenu)
+
+    def update_cmap(self, args):
+        Config.cmap = self.sender().text()
+        self.change_image_grid(self.ui.dirView.currentIndex())
+        self.update_statusbar()
+
+    ################################################################
+
+    def update_statusbar(self):
+        self.statusBarLabel.setText(
+            f'Colormap: {Config.cmap} | Directories loaded: {self.dirModel.rowCount()}')
+
+    ################################################################
+
+    def create_dir_model(self):
         self.dirModel.clear()
         for i in os.listdir(self.in_directory):
             if not os.path.isdir(os.path.join(self.in_directory, i)):
                 continue
 
             dirItem = QStandardItem()
+            dirItem2 = QStandardItem()
+            dirItem.appendColumn([dirItem2])
             dirItem.setText(i)
             self.dirModel.appendRow(dirItem)
 
