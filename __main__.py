@@ -16,22 +16,25 @@ class ToolBar(QtWidgets.QToolBar):
         super(ToolBar, self).__init__(parent)
 
         self.setMovable(False)
-        self.setIconSize(QtCore.QSize(22, 22))
+        self.setIconSize(QtCore.QSize(24, 24))
         self.setFloatable(False)
         self.setContextMenuPolicy(QtCore.Qt.PreventContextMenu)
         self.setObjectName('ToolBar')
 
         self.refreshButton = QtWidgets.QAction(
-            QIcon.fromTheme('fileopen'),
+            QIcon('Resources/folder.svg'),
             'Load directory', self)
 
         self.cmapButton = QtWidgets.QToolButton(self)
-        self.cmapButton.setIcon(QIcon.fromTheme('colormanagement'))
+        self.cmapButton.setIcon(QIcon('Resources/color.svg'))
         self.cmapButton.setPopupMode(QtWidgets.QToolButton.InstantPopup)
 
         self.saveButton = QtWidgets.QAction(
-            QIcon.fromTheme('filesave'),
-            'Save', self)
+            QIcon('Resources/save.svg'),
+            'Save curated list', self)
+        self.loadButton = QtWidgets.QAction(
+            QIcon('Resources/load.svg'),
+            'Load curated list', self)
 
         # Add to toolbar
         self.addAction(self.refreshButton)
@@ -39,6 +42,11 @@ class ToolBar(QtWidgets.QToolBar):
         self.addWidget(self.cmapButton)
         self.separator2 = self.addSeparator()
         self.addAction(self.saveButton)
+        self.addAction(self.loadButton)
+
+        self.cmapButton.setEnabled(False)
+        self.saveButton.setEnabled(False)
+        self.loadButton.setEnabled(False)
 
 
 class TableModel(QtCore.QAbstractTableModel):
@@ -79,6 +87,16 @@ class TableModel(QtCore.QAbstractTableModel):
             return self.dict_col[col]
         return None
 
+    def update_from_loaded(self, df):
+        for idx in range(df.shape[0]):
+            try:
+                study = df.iloc[idx]['DIRECTORY']
+                files = eval(df.iloc[idx]['FILES'])
+                self.dict_studies[study]['SELECTED'] = files
+
+            except:  # Using eval() - One, bad practice because Two, anything can happen
+                continue
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -87,8 +105,8 @@ class MainWindow(QMainWindow):
         self.ui.setupUi(self)
 
         # Instantiate widgets and models
-        self.toolbar = ToolBar()
-        self.addToolBar(self.toolbar)
+        self.toolBar = ToolBar()
+        self.addToolBar(self.toolBar)
 
         self.dirModel = TableModel(dict())
         self.imageModel = QStandardItemModel()
@@ -107,8 +125,9 @@ class MainWindow(QMainWindow):
         self.create_cmap_menu()
 
         # Toolbar
-        self.toolbar.refreshButton.triggered.connect(self.create_dir_model)
-        self.toolbar.saveButton.triggered.connect(self.export_df)
+        self.toolBar.refreshButton.triggered.connect(self.create_dir_model)
+        self.toolBar.saveButton.triggered.connect(self.export_df)
+        self.toolBar.loadButton.triggered.connect(self.load_df)
 
         # Directory list view
         self.ui.dirView.clicked.connect(self.change_image_grid)
@@ -139,7 +158,7 @@ class MainWindow(QMainWindow):
                 thisAction.triggered.connect(self.update_cmap)
                 thisMenu.addAction(thisAction)
 
-        self.toolbar.cmapButton.setMenu(self.cmapMenu)
+        self.toolBar.cmapButton.setMenu(self.cmapMenu)
 
     def update_cmap(self, args):
         Config.cmap = self.sender().text()
@@ -175,6 +194,11 @@ class MainWindow(QMainWindow):
         self.dirModel = TableModel(dict_table)
         self.ui.dirView.setModel(self.dirModel)
         self.ui.dirView.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.update_statusbar()
+
+        self.toolBar.cmapButton.setEnabled(True)
+        self.toolBar.saveButton.setEnabled(True)
+        self.toolBar.loadButton.setEnabled(True)
 
     ################################################################
 
@@ -240,7 +264,20 @@ class MainWindow(QMainWindow):
             rows.append((directory, files))
 
         df_studies = pd.DataFrame(rows, columns=['DIRECTORY', 'FILES'])
-        df_studies.to_csv('SelectedFiles.csv')
+        df_studies.to_csv(
+            os.path.join(os.path.expanduser('~'), 'SelectedFiles.csv'))
+
+    def load_df(self):
+        in_csv = QtWidgets.QFileDialog.getOpenFileName(
+            self, 'Load exported file list', os.path.expanduser('~'))
+
+        try:
+            df = pd.read_csv(in_csv[0])
+            self.dirModel.update_from_loaded(df)
+        except KeyboardInterrupt:
+            self.statusBarLabel.setText(
+                'No file selected / Error loading saved list')
+            return
 
 
 if __name__ == "__main__":
@@ -249,4 +286,4 @@ if __name__ == "__main__":
     window = MainWindow()
     window.show()
 
-    sys.exit(app.exec_()) 
+    sys.exit(app.exec_())
